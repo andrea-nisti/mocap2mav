@@ -16,9 +16,9 @@ int main(int argc, char** argv){
 
 	CallbackHandler call;
 	Automatic autom;
-
+	Lander lander;
 	lcm::Subscription *sub   = handler.subscribe("vision_position_estimate", &CallbackHandler::visionEstimateCallback, &call);
-	lcm::Subscription *sub2  = handler2.subscribe("square/pose", &CallbackHandler::positionSetpointCallback, &call);
+	lcm::Subscription *sub2  = handler2.subscribe("platform/pose", &CallbackHandler::positionSetpointCallback, &call);
 	lcm::Subscription *sub3  = handler3.subscribe("actual_task", &CallbackHandler::actualTaskCallback, &call);
 
 	sub ->setQueueCapacity(1);
@@ -35,9 +35,13 @@ int main(int argc, char** argv){
 
 	bool newTask;
     bool waiting = true;
+
 	uint64_t t = 0;
 	uint64_t t_prev = 0;
 	MavState platform;
+
+	lander.handleMachine();
+
 	while(0==handler.handle()){
 
 		t = time::getTimeMilliSecond();
@@ -45,7 +49,8 @@ int main(int argc, char** argv){
 		t_prev = t;
 
 		autom.setState(call._vision_pos);
-        //std::cout << autom.getState()._x << " " << autom.getState()._y << " " << autom.getState()._z << std::endl;
+        lander.setState(call._vision_pos);
+
 		int ret = poll(fds,2,0);
 
 
@@ -66,9 +71,9 @@ int main(int argc, char** argv){
 
 		if(fds[1].revents & POLLIN){
 
-            //std::cout << platform.getX() << " " << platform.getY() << " " << platform.getZ() << std::endl;
 			handler2.handle();
 			platform = call._position_sp;
+            lander.setPlatformState(platform);
 
 		}
 
@@ -101,9 +106,15 @@ int main(int argc, char** argv){
 				autom._actualTask.y = autom._comm.getY();
 			}
 
-            std::cout << autom._actualTask.params[0] << std::endl;
-            if(autom._actualTask.params[0] == 1) autom.land2(platform,autom._actualTask.params[1],autom._actualTask.params[2],autom._actualTask.params[3]);
-            else autom.land1((float)autom._actualTask.x,(float)autom._actualTask.y,(float)autom._actualTask.params[0]);
+            if(autom._actualTask.params[0] == 1){
+                //autom.land2(platform,autom._actualTask.params[1],autom._actualTask.params[2],autom._actualTask.params[3]);
+
+                lander.handleMachine();
+                lander.run();
+                autom._comm = lander.getCommand();
+
+            }
+            else autom.land1((float)autom._actualTask.x,(float)autom._actualTask.y,(float)autom._actualTask.z);
 
 		}
 		if (autom.getTask().action == actions::ROTATE){
@@ -115,8 +126,10 @@ int main(int argc, char** argv){
         if(!waiting) {
             geometry::pose command = call.mavState2LcmPose(autom._comm);
 
-            //std::cout << "COMMAND " <<command.position[0] << " " << command.position[1] << " " << command.position[2] << std::endl;
             handler.publish("local_position_sp", &command);
+
+			//For gazebo visualization with the marker plugin
+			handler.publish("Marker/pose_cmd", &command);
         }
 	}
 

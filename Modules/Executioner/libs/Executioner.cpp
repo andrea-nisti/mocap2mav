@@ -68,11 +68,10 @@ bool Executioner::readyToPublish() {
 
 void Executioner::run(){
 
-
     if(_nodeList.size() > 0) {
 
         loadTask();
-        _can_run = true; //TRUE
+        _can_run = true;
         _idle = false;
     }
     else{
@@ -193,12 +192,12 @@ bool Executioner::CheckActions(int a)
 
             if(_actualTask.params[0] == 1){
 
-                return false;
+                return false;//TODO: implement stopping condition
 
             }
             else{
 
-                return ((fabs(_state.getZ()) - fabs(_actualTask.params[0])) < 0.2 ) && (fabs(_state.getVz()) < 0.1);
+                return (_landed);
 
             }
 
@@ -256,7 +255,8 @@ void Executioner::loadTask() {
 
 }
 
+void Executioner::setStatus(bool armed, bool landed) {
 
-
-
-
+    _armed = armed;
+    _landed = landed;
+}

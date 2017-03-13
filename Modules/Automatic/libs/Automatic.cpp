@@ -1,14 +1,6 @@
 #include "Automatic.h"
 
-#define PI              3.141592653589
-#define Kland           4
-#define THRE            0.15
-#define DRATE_MIN       0.1
-#define DRATE_MAX       0.4
-#define VMAX            1.5
-#define TMAX            2
-#define TMIN            0.5
-#define PLATFORM_OFFSET 0.1
+
 
 Eigen::Quaterniond getQuatFromYaw(double yaw){
 
@@ -23,10 +15,7 @@ Eigen::Quaterniond getQuatFromYaw(double yaw){
 
 }
 
-Automatic::Automatic()
-{
-
-}
+Automatic::Automatic()  {}
 
 MavState Automatic::getState()
 {
@@ -80,13 +69,11 @@ void Automatic::rotate() {
 
     _comm.setYaw(yawComm);
 
-    Eigen::Quaterniond q_interm = getQuatFromYaw(yawComm);
+    Eigen::Quaterniond q_interm = yawToQuaternion(yawComm);
 
     _comm.setOrientation(q_interm);
 
 }
-
-//QUA
 
 void Automatic::calculateYawInterm(float heading, double yawTarget, double &yawComm){
 
@@ -140,67 +127,9 @@ double calculateDescendRate(double dz,double drate_max,double drate_min, double 
         return m * dz + q;
 
     }
-
 }
 
-void Automatic::land2(MavState platPose, double kp, double ki, double kd) {
 
-
-    //Calculate difference
-
-    double dx = - _state.getX() + platPose.getX();
-    double dy = - _state.getY() + platPose.getY();
-    double dz =   _state.getZ() + platPose.getZ() + PLATFORM_OFFSET; //_state.z is negative due to inversion,
-                                                                    // that is why we dont use the minus sign
-
-    // Be sure that we are on top of the target
-
-    double x_target_v = Kland * (dx);
-    double y_target_v = Kland * (dy);
-
-    //Normalize
-
-    Eigen::Vector2d v(x_target_v,y_target_v);
-
-    if(v.norm() > VMAX){
-
-        v.normalize();
-
-        v = v * VMAX;
-
-    }
-
-    _comm.setVx(v(0));
-    _comm.setVy(v(1));
-
-    //TODO: add security checks on vz
-    if(fabs(dx) <= THRE && fabs(dy) <= THRE){
-        //Descending is safe, is it?<
-        double desc = calculateDescendRate(-dz, DRATE_MAX, DRATE_MIN, TMAX, TMIN);
-
-        double z_target_v = platPose.getVz() - desc;
-        //if(z_target_v <= -DRATE) z_target_v = -DRATE; //could be useful
-
-        double err_v = z_target_v - _state.getVz();
-
-        z_target_v += ki*(err_v); // Proportional term
-        std::cout << "Actua: " <<-_state.getVz() + platPose.getVz()<< std::endl;
-        std::cout << "Desir: " << desc << std::endl;
-        std::cout << "ErrVe: " << err_v << std::endl;
-        std::cout << "ErrDe: " << desc - (-_state.getVz() + platPose.getVz())<< std::endl;
-
-        _comm.setVz(z_target_v);
-
-    }else if(fabs(dx) <= THRE*8 && fabs(dy) <= THRE*8){
-        _comm.setVz(DRATE_MAX*1.5);
-    }else {
-        _comm.setVz(0);
-    }                           //Is it correct?
-
-
-    _comm.setType(MavState::type::VELOCITY);
-
-}
 
 
 
@@ -269,8 +198,7 @@ void Automatic::land1(float x_target, float y_target, float h) {
 
     double dx = - _state.getX() + x_target;
     double dy = - _state.getY() + y_target;
-    double dz =   _state.getZ() - h; //_state.z is negative due to inversion,
-                                    // that is why we don't use the minus sign
+    double dz = - _state.getZ() + h;
 
     // Be sure that we are on top of the target
 
@@ -289,24 +217,82 @@ void Automatic::land1(float x_target, float y_target, float h) {
 
     }
 
-    _comm.setVx(v(0));
-    _comm.setVy(v(1));
+    _comm.setVx(v(0) * 2);
+    _comm.setVy(v(1) * 2);
 
     //TODO: add security checks on vz
     if(fabs(dx) <= THRE && fabs(dy) <= THRE){
         //Descending is safe, is it?
         double desc = calculateDescendRate(fabs(dz), DRATE_MAX, DRATE_MIN, TMAX, TMIN);
-
         _comm.setVz(-desc);
+        /*
         if (fabs(dz) < 0.05){
             _comm.setVx(0);
             _comm.setVy(0);
             _comm.setVz(-10);
         }
+        */
+    }
+
+    //else if (fabs(dx) <= THRE * 10 && fabs(dy) <= THRE * 10) _comm.setVz(DRATE_MAX); //Is it correct? Don't think so
+    else _comm.setVz(0);
+
+    _comm.setType(MavState::type::VELOCITY);
+
+}
+
+void Automatic::land2(MavState platPose, double kp, double ki, double kd) {
+
+
+    //Calculate difference
+
+    double dx = - _state.getX() + platPose.getX();
+    double dy = - _state.getY() + platPose.getY();
+    double dz = - _state.getZ() + platPose.getZ() + PLATFORM_OFFSET;
+
+    // Be sure that we are on top of the target
+
+    double x_target_v = Kland * (dx);
+    double y_target_v = Kland * (dy);
+
+    //Normalize
+
+    Eigen::Vector2d v(x_target_v,y_target_v);
+
+    if(v.norm() > VMAX){
+
+        v.normalize();
+        v = v * VMAX;
 
     }
-    else if (fabs(dx) <= THRE * 10 && fabs(dy) <= THRE * 10) _comm.setVz(DRATE_MAX); //Is it correct? Don't think so
-    else _comm.setVz(0);
+
+    _comm.setVx(v(0));
+    _comm.setVy(v(1));
+
+    //TODO: add security checks on vz
+    if(fabs(dx) <= THRE && fabs(dy) <= THRE){
+        //Descending is safe, is it?<
+        double desc = calculateDescendRate(dz, DRATE_MAX, DRATE_MIN, TMAX, TMIN);
+
+        double z_target_v = platPose.getVz() - desc;
+        //if(z_target_v <= -DRATE) z_target_v = -DRATE; //could be useful
+
+        double err_v = z_target_v - _state.getVz();
+
+        z_target_v += kp*(err_v); // Proportional term
+
+        std::cout << "Actua: " <<-_state.getVz() + platPose.getVz()<< std::endl;
+        std::cout << "Desir: " << desc << std::endl;
+        std::cout << "ErrVe: " << err_v << std::endl;
+        std::cout << "ErrDe: " << desc - (-_state.getVz() + platPose.getVz())<< std::endl;
+
+        _comm.setVz(z_target_v);
+
+    }else if(fabs(dx) <= THRE*8 && fabs(dy) <= THRE*8){
+        _comm.setVz(DRATE_MAX*1.5);
+    }else {
+        _comm.setVz(0);
+    }                           //Is it correct?
 
     _comm.setType(MavState::type::VELOCITY);
 
